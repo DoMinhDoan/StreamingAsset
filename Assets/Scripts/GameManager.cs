@@ -32,7 +32,8 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-
+using System.IO;
+using UnityEngine.Networking;
 
 public class GameManager : MonoBehaviour
 {
@@ -58,6 +59,11 @@ public class GameManager : MonoBehaviour
     private float timer;
     public string formattedTime;
 
+    public Image playerAvatar;
+    public Text playerName;
+
+    public AudioSource musicPlayer;
+
     public void UpdateTimerUI()
     {
         timer += Time.deltaTime;
@@ -72,7 +78,74 @@ public class GameManager : MonoBehaviour
         loadingScreen.SetActive(true);
         Time.timeScale = 0.0f;
         playerTank = GameObject.FindGameObjectWithTag("Player");
+
+        DirectoryInfo directoryInfo = new DirectoryInfo(Application.streamingAssetsPath);
+        print("Streaming Assets Path : " + Application.streamingAssetsPath);
+        FileInfo[] allFiles = directoryInfo.GetFiles("*.*");
+        foreach(var file in allFiles)
+        {
+            if(file.Name.Contains("player1"))
+            {
+                StartCoroutine("LoadPlayerUI", file);
+            }
+        }
+
         StartCoroutine("RemoveLoadingScreen");
+    }
+
+    IEnumerator LoadPlayerUI(FileInfo file)
+    {
+        if (file.Name.Contains("meta"))
+        {
+            yield break;
+        }
+        else
+        {
+            string playerFileWithoutExtension = Path.GetFileNameWithoutExtension(file.ToString());
+            string[] playerNameData = playerFileWithoutExtension.Split(" "[0]);
+
+            string strPlayerName = "";
+
+            for(int i = 1; i < playerNameData.Length; i++)
+            {
+                strPlayerName = strPlayerName + playerNameData[i] + " ";
+            }
+
+            string wwwPlayerFilePath = "file://" + file.FullName.ToString();
+            UnityWebRequest www = UnityWebRequestTexture.GetTexture(wwwPlayerFilePath);            
+            yield return www.SendWebRequest();
+
+            Texture2D avatarTex = ((DownloadHandlerTexture)www.downloadHandler).texture;
+            playerAvatar.sprite = Sprite.Create(avatarTex, new Rect(0, 0, avatarTex.width, avatarTex.height), new Vector2(0.5f, 0.5f));
+            playerName.text = strPlayerName;
+        }
+    }
+
+    IEnumerator LoadBackgroundMusic(FileInfo musicFile)
+    {
+        if (musicFile.Name.Contains("meta"))
+        {
+            yield break;
+        }
+        else
+        {
+            string musicFilePath = musicFile.FullName.ToString();
+            string url = string.Format("file://{0}", musicFilePath);
+
+            UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(url, AudioType.OGGVORBIS);
+            yield return www.SendWebRequest();
+
+            if (www.isNetworkError)
+            {
+                Debug.Log(www.error);
+            }
+            else
+            {
+                musicPlayer.clip = DownloadHandlerAudioClip.GetContent(www);
+                musicPlayer.Play();
+            }
+
+        }
     }
 
     IEnumerator RemoveLoadingScreen()
