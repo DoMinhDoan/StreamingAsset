@@ -64,6 +64,15 @@ public class GameManager : MonoBehaviour
 
     public AudioSource musicPlayer;
 
+    [Header("Tank Customisation")]
+    public Texture2D tankTexture;
+    public Texture2D tankTreads;
+    public Renderer tankRenderer;
+    private Texture2D newTankTexture;
+    private Vector3 defaultTankPrimary = new Vector3(580, 722, 467);
+    private Vector3 defaultTankSecondary = new Vector3(718, 149, 0);
+
+
     public void UpdateTimerUI()
     {
         timer += Time.deltaTime;
@@ -87,6 +96,10 @@ public class GameManager : MonoBehaviour
             if(file.Name.Contains("player1"))
             {
                 StartCoroutine("LoadPlayerUI", file);
+            }
+            else if(file.Name.Contains("playercolor"))
+            {
+                StartCoroutine("LoadPlayerColor", file);
             }
         }
 
@@ -146,6 +159,69 @@ public class GameManager : MonoBehaviour
             }
 
         }
+    }
+
+    IEnumerator LoadPlayerColor(FileInfo colorFile)
+    {
+        if (colorFile.Name.Contains("meta"))
+        {
+            yield break;
+        }
+        else
+        {
+            string wwwPlayerColorPath = "file://" + colorFile.FullName.ToString();
+            UnityWebRequest www = UnityWebRequestTexture.GetTexture(wwwPlayerColorPath);
+            yield return www.SendWebRequest();
+
+            Texture2D playerColorTex = ((DownloadHandlerTexture)www.downloadHandler).texture;
+
+            Color primaryColor = playerColorTex.GetPixel(5, 5);
+            Color secondaryColor = playerColorTex.GetPixel(15, 5);
+
+            Color[] currentPixelColors = tankTexture.GetPixels();
+            Color[] newPixelColors = new Color[currentPixelColors.Length];
+
+            float percentageDifferenceAllowed = 0.05f;
+
+            for(int i = 0; i< currentPixelColors.Length; i++)
+            {
+
+                // If the color matches the defaultTankPrimary you hard coded, the new primaryColor value is saved in its place to the newPixelColor array. 
+                // If the color matches the defaultTankSecondary, save the new secondaryColor;
+                // if the color matches neither, simply save the same color back.
+                Vector3 colorToTest = new Vector3(Mathf.RoundToInt(currentPixelColors[i].r * 1000), Mathf.RoundToInt(currentPixelColors[i].g * 1000), Mathf.RoundToInt(currentPixelColors[i].b * 1000));
+                if((colorToTest - defaultTankPrimary).sqrMagnitude <= (colorToTest * percentageDifferenceAllowed).sqrMagnitude)
+                {
+                    newPixelColors[i] = primaryColor;
+                }
+                else if ((colorToTest - defaultTankSecondary).sqrMagnitude <= (colorToTest * percentageDifferenceAllowed).sqrMagnitude)
+                {
+                    newPixelColors[i] = secondaryColor;
+                }
+                else
+                {
+                    newPixelColors[i] = currentPixelColors[i];
+                }
+            }
+
+            newTankTexture = new Texture2D(tankTexture.width, tankTexture.height);
+            newTankTexture.SetPixels(newPixelColors);
+            newTankTexture.Apply();
+
+            ApplyTextureToTank(tankRenderer, newTankTexture);
+        }
+    }
+
+    void ApplyTextureToTank(Renderer tankRenderer, Texture2D texture)
+    {
+        Renderer[] renders = tankRenderer.GetComponentsInChildren<Renderer>();
+        foreach(var render in renders)
+        {
+            render.material.mainTexture = texture;
+        }
+
+        tankRenderer.materials[1].mainTexture = texture;
+        tankRenderer.materials[0].mainTexture = tankTreads;
     }
 
     IEnumerator RemoveLoadingScreen()
