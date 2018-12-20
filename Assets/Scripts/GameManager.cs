@@ -34,6 +34,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using System.IO;
 using UnityEngine.Networking;
+using System.Collections.Generic;
 
 public class GameManager : MonoBehaviour
 {
@@ -72,6 +73,14 @@ public class GameManager : MonoBehaviour
     private Vector3 defaultTankPrimary = new Vector3(580, 722, 467);
     private Vector3 defaultTankSecondary = new Vector3(718, 149, 0);
 
+    [Header("Skin")]
+    public List<Texture2D> tankSkins;
+    public List<string> tankSkinNames;
+    public GameObject skinContainer;
+    public GameObject skinObject;
+
+    private bool skinMenuAssembled = false;
+
 
     public void UpdateTimerUI()
     {
@@ -100,6 +109,10 @@ public class GameManager : MonoBehaviour
             else if(file.Name.Contains("playercolor"))
             {
                 StartCoroutine("LoadPlayerColor", file);
+            }
+            else if (file.Name.Contains("skin"))
+            {
+                StartCoroutine("LoadSkin", file);
             }
         }
 
@@ -212,6 +225,30 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    IEnumerator LoadSkin(FileInfo file)
+    {
+        if (file.Name.Contains("meta"))
+        {
+            yield break;
+        }
+        else
+        {
+            string skinFileWithoutExtension = Path.GetFileNameWithoutExtension(file.ToString());
+            string[] tankSkinData = skinFileWithoutExtension.Split(" "[0]);
+
+            string skinName = tankSkinData[0];
+
+            string wwwTankSkinFilePath = "file://" + file.FullName.ToString();
+            UnityWebRequest www = UnityWebRequestTexture.GetTexture(wwwTankSkinFilePath);
+            yield return www.SendWebRequest();
+
+            Texture2D skinTex = ((DownloadHandlerTexture)www.downloadHandler).texture;
+
+            tankSkins.Add(skinTex);
+            tankSkinNames.Add(skinName);
+        }
+    }
+
     void ApplyTextureToTank(Renderer tankRenderer, Texture2D texture)
     {
         Renderer[] renders = tankRenderer.GetComponentsInChildren<Renderer>();
@@ -230,6 +267,29 @@ public class GameManager : MonoBehaviour
         loadingScreen.SetActive(false);
         timer = 0.0f;
         Time.timeScale = 1.0f;
+
+        if(!skinMenuAssembled)
+        {
+            StartCoroutine("AssembleSkinMenu");
+        }
+    }
+
+    IEnumerator AssembleSkinMenu()
+    {
+        skinMenuAssembled = true;
+
+        for(int i = 0; i < tankSkins.Count; i++)
+        {
+            GameObject skinObj = Instantiate(skinObject, new Vector3(0, 0, 0), Quaternion.identity, skinContainer.transform);
+
+            skinObj.transform.localPosition = new Vector3(100 + (200 * i), -80, 0);
+
+            SkinManager skinManager = skinObj.GetComponent<SkinManager>();
+            skinManager.ConfigureSkin(tankSkinNames[i], i);
+            ApplyTextureToTank(skinManager.tankRenderer, tankSkins[i]);
+        }
+
+        yield return null;
     }
 
     void Update()
@@ -274,6 +334,11 @@ public class GameManager : MonoBehaviour
     public void ApplySkin(int indexOfSkin)
     {
         // Method to be completed via tutorial 
+        ApplyTextureToTank(tankRenderer, tankSkins[indexOfSkin]);
+        PlayerUI.SetActive(true);
+        pauseMenuCamera.SetActive(false);
+        isPaused = false;
+        Time.timeScale = 1.0f;
     }
 
 }
