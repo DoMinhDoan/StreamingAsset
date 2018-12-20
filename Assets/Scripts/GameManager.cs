@@ -36,10 +36,36 @@ using System.IO;
 using UnityEngine.Networking;
 using System.Collections.Generic;
 
+[System.Serializable]
+public class Arena
+{
+    public string arenaFilePath;
+    public int levelNumber;
+    public string levelName;
+    public float startX;
+    public float startZ;
+    public float targetX;
+    public float targetZ;
+}
+
 public class GameManager : MonoBehaviour
 {
+    [Header("Arena")]
+    public List<Arena> arenaList = new List<Arena>();
+    public Texture2D arenaTexture;
+
+    [Header("Arena Prefab")]
+    public GameObject floorPrefab;
+    public GameObject weakFloorPrefab;
+    public GameObject wallPrefab;
+    public GameObject weakWallPrefab;
+    public GameObject mineTilePrefab;
 
     [Header("Arena Objects")]
+    public GameObject defaultArena;
+    public GameObject arenaTiles;
+    public GameObject target;
+
     private GameObject playerTank;
 
     [Header("Game UI")]
@@ -100,13 +126,13 @@ public class GameManager : MonoBehaviour
         DirectoryInfo directoryInfo = new DirectoryInfo(Application.streamingAssetsPath);
         print("Streaming Assets Path : " + Application.streamingAssetsPath);
         FileInfo[] allFiles = directoryInfo.GetFiles("*.*");
-        foreach(var file in allFiles)
+        foreach (var file in allFiles)
         {
-            if(file.Name.Contains("player1"))
+            if (file.Name.Contains("player1"))
             {
                 StartCoroutine("LoadPlayerUI", file);
             }
-            else if(file.Name.Contains("playercolor"))
+            else if (file.Name.Contains("playercolor"))
             {
                 StartCoroutine("LoadPlayerColor", file);
             }
@@ -114,6 +140,16 @@ public class GameManager : MonoBehaviour
             {
                 StartCoroutine("LoadSkin", file);
             }
+            else if (file.Name.Contains("Arena"))
+            {
+                StartCoroutine("LoadArena", file);
+            }
+        }
+
+        if (arenaList.Count != 0)
+        {
+            Destroy(defaultArena);
+            StartCoroutine("LoadLevel", arenaList[0]);
         }
 
         StartCoroutine("RemoveLoadingScreen");
@@ -132,13 +168,13 @@ public class GameManager : MonoBehaviour
 
             string strPlayerName = "";
 
-            for(int i = 1; i < playerNameData.Length; i++)
+            for (int i = 1; i < playerNameData.Length; i++)
             {
                 strPlayerName = strPlayerName + playerNameData[i] + " ";
             }
 
             string wwwPlayerFilePath = "file://" + file.FullName.ToString();
-            UnityWebRequest www = UnityWebRequestTexture.GetTexture(wwwPlayerFilePath);            
+            UnityWebRequest www = UnityWebRequestTexture.GetTexture(wwwPlayerFilePath);
             yield return www.SendWebRequest();
 
             Texture2D avatarTex = ((DownloadHandlerTexture)www.downloadHandler).texture;
@@ -196,14 +232,14 @@ public class GameManager : MonoBehaviour
 
             float percentageDifferenceAllowed = 0.05f;
 
-            for(int i = 0; i< currentPixelColors.Length; i++)
+            for (int i = 0; i < currentPixelColors.Length; i++)
             {
 
                 // If the color matches the defaultTankPrimary you hard coded, the new primaryColor value is saved in its place to the newPixelColor array. 
                 // If the color matches the defaultTankSecondary, save the new secondaryColor;
                 // if the color matches neither, simply save the same color back.
                 Vector3 colorToTest = new Vector3(Mathf.RoundToInt(currentPixelColors[i].r * 1000), Mathf.RoundToInt(currentPixelColors[i].g * 1000), Mathf.RoundToInt(currentPixelColors[i].b * 1000));
-                if((colorToTest - defaultTankPrimary).sqrMagnitude <= (colorToTest * percentageDifferenceAllowed).sqrMagnitude)
+                if ((colorToTest - defaultTankPrimary).sqrMagnitude <= (colorToTest * percentageDifferenceAllowed).sqrMagnitude)
                 {
                     newPixelColors[i] = primaryColor;
                 }
@@ -249,10 +285,124 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    IEnumerator LoadArena(FileInfo file)
+    {
+        if (file.Name.Contains("meta"))
+        {
+            yield break;
+        }
+        else
+        {
+            Arena arena = new Arena();
+            // arena <x coordinate of player start> <y coordinate of player start> <x coordinate of target> <y coordinate of target> <Name of your level>.png
+            string arenaFileWithoutExtension = Path.GetFileNameWithoutExtension(file.ToString());
+            string[] arenaData = arenaFileWithoutExtension.Split(" "[0]);
+
+            string levelName = "";
+            if (arenaData.Length < 5)
+            {
+                Debug.LogError("Wrong in file name. It should be in formatn : arena <x coordinate of player start> <y coordinate of player start> <x coordinate of target> <y coordinate of target> <Name of your level>.png");
+                yield break;
+            }
+            else if (arenaData.Length == 5)   // Not contain name in asset
+            {
+                levelName = "" + (arenaList.Count + 1);
+            }
+            else
+            {
+                for (int i = 5; i < arenaData.Length; i++)
+                {
+                    levelName = levelName + arenaData[i] + " ";
+                }
+            }
+
+            arena.startX = int.Parse(arenaData[1]);
+            arena.startZ = int.Parse(arenaData[2]);
+            arena.targetX = int.Parse(arenaData[3]);
+            arena.targetZ = int.Parse(arenaData[4]);
+            arena.levelName = levelName;
+            arena.arenaFilePath = "file://" + file.FullName.ToString();
+
+            arenaList.Add(arena);
+        }
+    }
+
+    IEnumerator LoadLevel(Arena arenaToLoad)
+    {
+        arenaName = arenaToLoad.levelName;
+
+        loadingScreen.SetActive(true);
+        gameOverScreen.SetActive(false);
+        winScreen.SetActive(false);
+
+        foreach (Transform child in arenaTiles.transform)
+        {
+            Destroy(child.gameObject);
+        }
+
+        UnityWebRequest www = UnityWebRequestTexture.GetTexture(arenaToLoad.arenaFilePath);
+        yield return www.SendWebRequest();
+
+        Texture2D arenaTex = ((DownloadHandlerTexture)www.downloadHandler).texture;
+
+        // yellow = 255 255 0 = No tiles
+        // red = 255 0 0 = Floor tile with mine
+        // blue = 0 0 255 = Weak floor
+        // green = 0 255 0 = Weak wall
+        // black = 0 0 0 = Nornal wall
+        // alpha = 0 = Normal floor
+        Color[] arenaColor = arenaTex.GetPixels();
+        for(int i = 0; i< arenaColor.Length; i++)
+        {
+            int xPosition = ((i + 1) % 100);
+            if (xPosition == 0)
+            {
+                xPosition = 100;
+            }
+            int zPosition = (i / 100) + 1;
+
+            if (arenaColor[i].a < 0.1f) // alpha = 0 = Normal floor
+            {
+                GameObject.Instantiate(floorPrefab, new Vector3(xPosition / 1.0f, 0.0f, zPosition / 1.0f), Quaternion.Euler(90, 0, 0), arenaTiles.transform);
+            }
+            else
+            {
+                if (arenaColor[i].r > 0.9f && arenaColor[i].g > 0.9f && arenaColor[i].b < 0.1f) // yellow = 255 255 0 = No tiles
+                {
+
+                }
+                else if (arenaColor[i].r > 0.9f && arenaColor[i].g < 0.1f && arenaColor[i].b < 0.1f)    // red = 255 0 0 = Floor tile with mine
+                {
+                    GameObject.Instantiate(mineTilePrefab, new Vector3(xPosition / 1.0f, 0.0f, zPosition / 1.0f), Quaternion.identity, arenaTiles.transform);
+                }
+                else if (arenaColor[i].r < 0.1f && arenaColor[i].g > 0.9f && arenaColor[i].b < 0.1f)    // green = 0 255 0 = Weak wall
+                {
+                    GameObject.Instantiate(weakWallPrefab, new Vector3(xPosition / 1.0f, 0.0f, zPosition / 1.0f), Quaternion.identity, arenaTiles.transform);
+                }
+                else if (arenaColor[i].r < 0.1f && arenaColor[i].g < 0.1f && arenaColor[i].b > 0.9f)    // blue = 0 0 255 = Weak floor
+                {
+                    GameObject.Instantiate(weakFloorPrefab, new Vector3(xPosition / 1.0f, 0.0f, zPosition / 1.0f), Quaternion.identity, arenaTiles.transform);
+                }
+                else    // black = 0 0 0 = Nornal wall
+                {
+                    GameObject.Instantiate(wallPrefab, new Vector3(xPosition / 1.0f, 0.0f, zPosition / 1.0f), Quaternion.identity, arenaTiles.transform);
+                }
+            }
+        }
+
+        StartCoroutine("RemoveLoadingScreen");
+        Time.timeScale = 1.0f;
+
+        playerTank.transform.position = new Vector3(arenaToLoad.startX / 1.0f, 1.0f, (100 - arenaToLoad.startZ) / 1.0f);
+        playerTank.transform.localRotation = Quaternion.Euler(0.0f, 0.0f, 0.0f);
+
+        target.transform.position = new Vector3(arenaToLoad.targetX / 1.0f, 0.6f, (100 - arenaToLoad.targetZ) / 1.0f);
+    }
+
     void ApplyTextureToTank(Renderer tankRenderer, Texture2D texture)
     {
         Renderer[] renders = tankRenderer.GetComponentsInChildren<Renderer>();
-        foreach(var render in renders)
+        foreach (var render in renders)
         {
             render.material.mainTexture = texture;
         }
@@ -268,7 +418,7 @@ public class GameManager : MonoBehaviour
         timer = 0.0f;
         Time.timeScale = 1.0f;
 
-        if(!skinMenuAssembled)
+        if (!skinMenuAssembled)
         {
             StartCoroutine("AssembleSkinMenu");
         }
@@ -278,7 +428,7 @@ public class GameManager : MonoBehaviour
     {
         skinMenuAssembled = true;
 
-        for(int i = 0; i < tankSkins.Count; i++)
+        for (int i = 0; i < tankSkins.Count; i++)
         {
             GameObject skinObj = Instantiate(skinObject, new Vector3(0, 0, 0), Quaternion.identity, skinContainer.transform);
 
@@ -318,7 +468,14 @@ public class GameManager : MonoBehaviour
 
     public void RestartLevel()
     {
-        SceneManager.LoadScene("MainScene"); 
+        if(arenaList.Count > 0)
+        {
+            StartCoroutine("LoadLevel", arenaList[currentLevel - 1]);
+        }
+        else
+        {
+            SceneManager.LoadScene("MainScene");
+        }
         Time.timeScale = 1.0f;
         Rigidbody playerRB = playerTank.GetComponent<Rigidbody>();
         playerRB.isKinematic = true;
@@ -328,12 +485,24 @@ public class GameManager : MonoBehaviour
 
     public void StartNextLevel()
     {
-        // Method to be completed via tutorial
+        if(currentLevel < arenaList.Count)
+        {
+            currentLevel++;
+            StartCoroutine("LoadLevel", arenaList[currentLevel - 1]);
+        }
+        else
+        {
+            SceneManager.LoadScene("MainScene");
+        }
+
+        // There may be residual input applied to the tank when restarting or transitioning between levels.
+        // Toggle the player's Rigidbody from kinematic to non-kinematic to zero this out.
+        playerTank.GetComponent<Rigidbody>().isKinematic = true;
+        playerTank.GetComponent<Rigidbody>().isKinematic = false;
     }
 
     public void ApplySkin(int indexOfSkin)
-    {
-        // Method to be completed via tutorial 
+    {        
         ApplyTextureToTank(tankRenderer, tankSkins[indexOfSkin]);
         PlayerUI.SetActive(true);
         pauseMenuCamera.SetActive(false);
